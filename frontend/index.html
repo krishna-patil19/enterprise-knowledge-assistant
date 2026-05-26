@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Engineering Knowledge Assistant</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="style.css">
+    <!-- Lucide Icons for clean aesthetic vector styling -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <!-- Floating Ambient Orbs in Background -->
+    <div class="ambient-glow">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header>
+            <div class="brand">
+                <i data-lucide="database" style="color: var(--accent-cyan);"></i>
+                <h1>Enterprise Engineering Knowledge Assistant</h1>
+            </div>
+            <div class="system-status">
+                <span class="status-dot"></span>
+                <span id="status-text">SYSTEM ACTIVE</span>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Workspace -->
+        <div class="dashboard-grid">
+            <!-- Left Side: Ingestion Dashboard -->
+            <div class="panel left-sidebar">
+                <div class="panel-header">
+                    <h2><i data-lucide="folder-git-2" style="color: var(--accent-purple);"></i> S3 Knowledge Base</h2>
+                </div>
+                <div class="panel-content">
+                    <button class="ingestion-btn" id="reindex-btn" onclick="triggerIndexing()">
+                        <i data-lucide="refresh-cw"></i>
+                        <span>FORCE SCAN & INDEX S3</span>
+                    </button>
+                    
+                    <div class="file-list-header" id="file-count">Indexed Files (0)</div>
+                    <div class="file-list" id="file-list">
+                        <!-- Populated dynamically -->
+                        <div class="file-item" style="border-style: dashed; justify-content: center; opacity: 0.5;">
+                            <span class="file-name" style="font-size: 0.75rem;">No files indexed. Click button above.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Pane: Chat Terminal -->
+            <div class="panel center-panel">
+                <div class="panel-header">
+                    <h2><i data-lucide="messages-square" style="color: var(--accent-cyan);"></i> Engineering Terminal</h2>
+                </div>
+                
+                <!-- Chat Window -->
+                <div class="chat-history" id="chat-history">
+                    <div class="empty-chat-state" id="empty-state">
+                        <i data-lucide="cpu" size="48" style="color: var(--accent-cyan);"></i>
+                        <h3>Ask Your Engineering Base</h3>
+                        <p>Retrieve connected knowledge from SQL structures, Python AST modules, configs, and architectural guides.</p>
+                        
+                        <div class="suggestions-grid">
+                            <button class="suggestion-card" onclick="setQuery('Where is sumState used?')">
+                                <strong>Where is sumState used?</strong><br>
+                                Scopes to clickhouse SQL tables and ETL pipelines, returning direct relations.
+                            </button>
+                            <button class="suggestion-card" onclick="setQuery('Explain how raw sales data is loaded into ClickHouse.')">
+                                <strong>How is raw sales data loaded?</strong><br>
+                                Pulls AST chunks of load functions, associated schemas, and configs.
+                            </button>
+                            <button class="suggestion-card" onclick="setQuery('What partitions are used in sales_aggregates_local?')">
+                                <strong>How are sales partitioned?</strong><br>
+                                Inspects aggregation guide instructions and table definition queries.
+                            </button>
+                            <button class="suggestion-card" onclick="setQuery('Check this email info: test@customer.com')">
+                                <strong>PII Censor Test</strong><br>
+                                Verifies that user queries or document embeddings are scrubbed of emails/secrets.
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input area -->
+                <div class="chat-input-area">
+                    <div class="chat-input-wrapper">
+                        <textarea id="query-input" placeholder="Query clickhouse tables, python AST linkages or guidelines..." onkeydown="handleKeyDown(event)"></textarea>
+                        <button class="send-btn" id="send-btn" onclick="sendQuery()">
+                            <i data-lucide="send"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Metrics & Visual Graph -->
+            <div class="right-sidebar">
+                <!-- Top Panel: Graph -->
+                <div class="panel visualizer-panel">
+                    <div class="panel-header">
+                        <h2><i data-lucide="git-branch" style="color: var(--accent-green);"></i> Linkages Visualizer</h2>
+                    </div>
+                    <div class="panel-content" style="padding: 8px;">
+                        <div class="graph-container" id="graph-container">
+                            <div style="display: flex; align-items: center; justify-content: center; height: 100%; font-size: 0.75rem; color: var(--text-muted); text-align: center; padding: 12px;">
+                                Query the assistant to view relationship map links.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Panel: Metrics Dashboard -->
+                <div class="panel metrics-panel">
+                    <div class="panel-header">
+                        <h2><i data-lucide="bar-chart-3" style="color: #ffaa00;"></i> RAG Observability</h2>
+                    </div>
+                    <div class="panel-content">
+                        <div class="metrics-grid">
+                            <div class="metric-card">
+                                <div class="metric-title">Latency</div>
+                                <div class="metric-value" id="metric-duration">0.00s</div>
+                                <div class="metric-desc">Scoping + Hybrid FTS5/Cosine RRF search duration</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-title">Context Chunks</div>
+                                <div class="metric-value purple" id="metric-chunks">0</div>
+                                <div class="metric-desc">Reranked technical segments in prompt</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-title">Est. Token Cost</div>
+                                <div class="metric-value green" id="metric-tokens">0</div>
+                                <div class="metric-desc">Compressed prompt + answer tokens count</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-title">Security Check</div>
+                                <div class="metric-value" id="metric-security">Clean</div>
+                                <div class="metric-desc">PII Shield filter status</div>
+                            </div>
+                            <div class="metric-card full-width">
+                                <div class="metric-title">Active Folder Scope</div>
+                                <div class="scoping-pills" id="scoping-pills">
+                                    <span class="scope-pill" style="background: rgba(255,255,255,0.03); color: var(--text-muted); border: 1px solid var(--border-color);">Inactive</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sliding Code tab Drawer Overlay -->
+        <div class="overlay-panel" id="overlay-panel">
+            <div class="overlay-header">
+                <div class="overlay-title" id="overlay-filename">Source File Viewer</div>
+                <button class="close-overlay" onclick="toggleOverlay(false)">
+                    <i data-lucide="x" size="20"></i>
+                </button>
+            </div>
+            <div class="code-tabs-bar" id="overlay-tabs">
+                <!-- Tab items populated dynamically -->
+            </div>
+            <div class="code-viewer-container">
+                <pre><code id="overlay-code">Click on a citation or visualizer node to inspect code.</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core App Logic (Spring Force Graph Layout, API and SSE) -->
+    <script>
+        const API_URL = ""; // Relative URL, requests will flow directly to backend
+        let isFetching = false;
+        let indexedFilesCache = [];
+        let currentlyRetrievedChunks = [];
+
+        // SVG Force Graph variables
+        let graphNodes = [];
+        let graphLinks = [];
+        let graphAnimationId = null;
+
+        // Initialize App
+        window.addEventListener("DOMContentLoaded", () => {
+            fetchHealth();
+            lucide.createIcons();
+        });
+
+        // Trigger Health Check & Load File List
+        async function fetchHealth() {
+            try {
+                const res = await fetch(`${API_URL}/health`);
+                const data = await res.json();
+                
+                if (data.status === "healthy") {
+                    document.getElementById("status-text").innerText = "SYSTEM ACTIVE";
+                    document.getElementById("status-text").parentElement.querySelector(".status-dot").style.backgroundColor = "var(--accent-green)";
+                    
+                    indexedFilesCache = data.indexed_files || [];
+                    updateFileListView(indexedFilesCache);
+                }
+            } catch (err) {
+                console.error("Health check failed:", err);
+                document.getElementById("status-text").innerText = "OFFLINE";
+                document.getElementById("status-text").parentElement.querySelector(".status-dot").style.backgroundColor = "#ff4d4d";
+                document.getElementById("status-text").parentElement.querySelector(".status-dot").style.boxShadow = "0 0 10px #ff4d4d";
+            }
+        }
+
+        // Trigger Manual Ingestion Watcher Scan
+        async function triggerIndexing() {
+            const btn = document.getElementById("reindex-btn");
+            if (btn.classList.contains("loading")) return;
+            
+            btn.classList.add("loading");
+            btn.querySelector("span").innerText = "INDEXING S3 BUCKET...";
+            
+            try {
+                const res = await fetch(`${API_URL}/index`, { method: "POST" });
+                const data = await res.json();
+                
+                if (data.status === "success") {
+                    fetchHealth();
+                    // Alert of stats
+                    const s = data.statistics;
+                    alert(`Ingestion Completed!\nScanned: ${s.scanned}\nIndexed: ${s.indexed}\nSkipped: ${s.skipped}\nPII Blocked: ${s.blocked_pii}\nErrors: ${s.errors}`);
+                }
+            } catch (err) {
+                console.error("Indexing failed:", err);
+                alert("Indexing pipeline run failed.");
+            } finally {
+                btn.classList.remove("loading");
+                btn.querySelector("span").innerText = "FORCE SCAN & INDEX S3";
+            }
+        }
+
+        // Render Sidebar File List
+        function updateFileListView(files) {
+            const countEl = document.getElementById("file-count");
+            const listEl = document.getElementById("file-list");
+            
+            countEl.innerText = `Indexed Files (${files.length})`;
+            
+            if (files.length === 0) {
+                listEl.innerHTML = `
+                    <div class="file-item" style="border-style: dashed; justify-content: center; opacity: 0.5;">
+                        <span class="file-name" style="font-size: 0.75rem;">No files indexed. Click button above.</span>
+                    </div>`;
+                return;
+            }
+            
+            listEl.innerHTML = files.map(file => {
+                const ext = file.split(".").pop();
+                let badgeClass = "docs";
+                if (ext === "sql") badgeClass = "sql";
+                else if (ext === "py") badgeClass = "python";
+                else if (ext === "yaml" || ext === "yml" || ext === "json") badgeClass = "configs";
+                
+                return `
+                    <div class="file-item" onclick="openFileViewer('${file}')" style="cursor: pointer;">
+                        <div class="file-info">
+                            <span class="file-name" title="${file}">${file}</span>
+                            <div class="file-meta-row">
+                                <span class="folder-badge ${badgeClass}">${badgeClass}</span>
+                            </div>
+                        </div>
+                        <i data-lucide="eye" size="14" style="color: var(--text-muted);"></i>
+                    </div>`;
+            }).join("");
+            
+            lucide.createIcons();
+        }
+
+        // Suggestions/Presets
+        function setQuery(text) {
+            document.getElementById("query-input").value = text;
+            document.getElementById("query-input").focus();
+        }
+
+        function handleKeyDown(e) {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendQuery();
+            }
+        }
+
+        // Stream Query RAG via SSE
+        async function sendQuery() {
+            const input = document.getElementById("query-input");
+            const query = input.value.trim();
+            if (!query || isFetching) return;
+
+            isFetching = true;
+            input.value = "";
+            
+            // Remove empty state
+            const emptyState = document.getElementById("empty-state");
+            if (emptyState) emptyState.remove();
+            
+            // 1. Add User Message
+            appendMessage("user", query);
+            
+            // 2. Add Assistant Message Shell
+            const assistantMessageId = appendMessage("assistant", "..." );
+            const bubble = document.getElementById(assistantMessageId).querySelector(".message-bubble");
+            
+            // Lock input controls
+            document.getElementById("send-btn").disabled = true;
+            
+            try {
+                // Initialize SSE Post Stream
+                const response = await fetch(`${API_URL}/query/stream`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ query: query, limit: 5 })
+                });
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+                let buffer = "";
+                let hasInitializedText = false;
+                let fullAnswer = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n\n");
+                    buffer = lines.pop(); // Keep last incomplete chunk
+
+                    for (const line of lines) {
+                        if (!line.startsWith("data: ")) continue;
+                        
+                        const jsonStr = line.slice(6).trim();
+                        if (!jsonStr) continue;
+                        
+                        try {
+                            const packet = JSON.parse(jsonStr);
+                            
+                            // Event 1: Context Metadata Packet
+                            if (packet.event === "metadata") {
+                                const metadata = packet.data;
+                                currentlyRetrievedChunks = metadata.retrieved_chunks || [];
+                                
+                                // Render metrics
+                                document.getElementById("metric-duration").innerText = "0.04s"; // Mock timing backup
+                                document.getElementById("metric-chunks").innerText = currentlyRetrievedChunks.length;
+                                document.getElementById("metric-security").innerHTML = metadata.metrics.pii_filtered 
+                                    ? `<span class="censor-badge"><i data-lucide="shield-alert" size="10"></i> REDACTED</span>`
+                                    : `<span class="scope-badge"><i data-lucide="shield-check" size="10"></i> SECURE</span>`;
+                                    
+                                // Scope Pills
+                                const scopes = metadata.metrics.folders_scoped || [];
+                                document.getElementById("scoping-pills").innerHTML = scopes.map(s => `
+                                    <span class="scope-pill" style="background: rgba(0, 240, 255, 0.1); color: var(--accent-cyan); border: 1px solid rgba(0, 240, 255, 0.2);">${s}</span>
+                                `).join("");
+                                
+                                // Start rendering dynamic relationship graph
+                                buildSVGGraph(metadata.relationships, currentlyRetrievedChunks);
+                                
+                                lucide.createIcons();
+                            } 
+                            // Event 2: Streaming Answer Tokens
+                            else if (packet.event === "token") {
+                                if (!hasInitializedText) {
+                                    bubble.innerHTML = "";
+                                    hasInitializedText = true;
+                                }
+                                fullAnswer += packet.data;
+                                // Simple markdown formatting backup helper (converting ``` and ` formatting)
+                                bubble.innerHTML = formatMarkdownText(fullAnswer);
+                                document.getElementById("chat-history").scrollTop = document.getElementById("chat-history").scrollHeight;
+                            }
+                            // Event 3: Done Stream
+                            else if (packet.event === "done") {
+                                // Add Citations
+                                if (currentlyRetrievedChunks.length > 0) {
+                                    appendCitations(bubble, currentlyRetrievedChunks);
+                                }
+                                // Compute mock token count
+                                const costEst = (fullAnswer.length + 1000) // rough length estimate
+                                document.getElementById("metric-tokens").innerText = Math.round(costEst / 4);
+                            }
+                        } catch (e) {
+                            console.error("Failed to parse stream packet:", e, jsonStr);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Streaming error:", err);
+                bubble.innerText = "Error executing query. Connection lost.";
+            } finally {
+                isFetching = false;
+                document.getElementById("send-btn").disabled = false;
+                document.getElementById("chat-history").scrollTop = document.getElementById("chat-history").scrollHeight;
+            }
+        }
+
+        // Add Bubble to Terminal
+        function appendMessage(role, text) {
+            const history = document.getElementById("chat-history");
+            const msgId = `msg-${Date.now()}`;
+            
+            const messageDiv = document.createElement("div");
+            messageDiv.className = `message ${role}`;
+            messageDiv.id = msgId;
+            
+            const icon = role === "user" ? "user" : "bot";
+            
+            messageDiv.innerHTML = `
+                <div class="message-avatar">
+                    <i data-lucide="${icon}"></i>
+                </div>
+                <div class="message-bubble">
+                    ${role === "user" ? text : formatMarkdownText(text)}
+                </div>`;
+                
+            history.appendChild(messageDiv);
+            history.scrollTop = history.scrollHeight;
+            lucide.createIcons();
+            
+            return msgId;
+        }
+
+        // Format code segments inside bubble
+        function formatMarkdownText(text) {
+            // Converts standard md titles, bullet lines, code blocks and citations
+            let formatted = text
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") // sanitize
+                .replace(/### (.*?)\n/g, '<h3 style="margin: 12px 0 8px; font-size: 0.95rem; font-weight:600; color:var(--accent-cyan);">$1</h3>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/\* (.*?)\n/g, '<li style="margin-left: 16px; margin-bottom: 4px;">$1</li>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>');
+                
+            // Code blocks
+            const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+            formatted = formatted.replace(codeBlockRegex, (match, lang, code) => {
+                return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
+            });
+            
+            return formatted;
+        }
+
+        // Append clickable source files citations at bottom of assistant answer
+        function appendCitations(bubbleElement, chunks) {
+            // Find unique files cited
+            const uniqueFiles = [...new Set(chunks.map(c => c.file_name))];
+            
+            const citationsDiv = document.createElement("div");
+            citationsDiv.className = "citations-bar";
+            citationsDiv.innerHTML = `<span style="font-size:0.75rem; color:var(--text-muted); display:flex; align-items:center; gap:4px; width:100%;"><i data-lucide="bookmark" size="12"></i> Referenced Sources:</span>` +
+                uniqueFiles.map(file => {
+                    const ext = file.split(".").pop();
+                    let icon = "file-text";
+                    if (ext === "sql") icon = "database";
+                    else if (ext === "py") icon = "code";
+                    else if (ext === "yaml" || ext === "yml") icon = "settings";
+                    
+                    return `
+                        <div class="citation-pill" onclick="openFileViewer('${file}')">
+                            <i data-lucide="${icon}" size="10"></i>
+                            <span>${file}</span>
+                        </div>`;
+                }).join("");
+                
+            bubbleElement.appendChild(citationsDiv);
+            lucide.createIcons();
+        }
+
+        // Dynamic Spring-Physics Force Directed Graph Layout Visualizer
+        function buildSVGGraph(relations, chunks) {
+            const container = document.getElementById("graph-container");
+            container.innerHTML = ""; // Clear loader
+            
+            // 1. Compile Unique Nodes
+            const nodesMap = new Map();
+            
+            // Add primary nodes from retrieved chunks
+            chunks.forEach(chunk => {
+                const fName = chunk.file_name;
+                const ext = fName.split(".").pop();
+                if (!nodesMap.has(fName)) {
+                    nodesMap.set(fName, { id: fName, type: ext, val: 5 });
+                }
+            });
+            
+            // Add nodes from relationships
+            relations.forEach(rel => {
+                if (!nodesMap.has(rel.source)) {
+                    const ext = rel.source.split(".").pop();
+                    nodesMap.set(rel.source, { id: rel.source, type: ext, val: 3 });
+                }
+                if (!nodesMap.has(rel.target)) {
+                    const ext = rel.target.split(".").pop();
+                    nodesMap.set(rel.target, { id: rel.target, type: ext, val: 3 });
+                }
+            });
+            
+            graphNodes = Array.from(nodesMap.values());
+            
+            // 2. Compile Unique Links
+            graphLinks = relations.map(rel => ({
+                source: rel.source,
+                target: rel.target,
+                type: rel.type
+            }));
+            
+            if (graphNodes.length === 0) {
+                container.innerHTML = `<div style="display:flex; align-items:center; justify-content:center; height:100%; font-size:0.75rem; color:var(--text-muted);">No linkages mapped in context.</div>`;
+                return;
+            }
+
+            // Create SVG Canvas
+            const width = container.clientWidth || 360;
+            const height = container.clientHeight || 240;
+            
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+            container.appendChild(svg);
+            
+            // Initialize random positions near the center
+            graphNodes.forEach(node => {
+                node.x = width / 2 + (Math.random() - 0.5) * 60;
+                node.y = height / 2 + (Math.random() - 0.5) * 60;
+                node.vx = 0;
+                node.vy = 0;
+            });
+
+            // Stop any previous running animation loop
+            if (graphAnimationId) {
+                cancelAnimationFrame(graphAnimationId);
+            }
+
+            // Run Force Simulation Loop
+            function tick() {
+                const kAttract = 0.04; // link spring strength
+                const kRepel = 850;   // node repulsion strength
+                const dampening = 0.82; // momentum loss
+                
+                // Repulsion forces between ALL nodes
+                for (let i = 0; i < graphNodes.length; i++) {
+                    const nodeA = graphNodes[i];
+                    for (let j = i + 1; j < graphNodes.length; j++) {
+                        const nodeB = graphNodes[j];
+                        
+                        const dx = nodeB.x - nodeA.x;
+                        const dy = nodeB.y - nodeA.y;
+                        const distSq = dx * dx + dy * dy || 1;
+                        const dist = Math.sqrt(distSq);
+                        
+                        // Push away
+                        const force = kRepel / distSq;
+                        const fx = (dx / dist) * force;
+                        const fy = (dy / dist) * force;
+                        
+                        nodeA.vx -= fx;
+                        nodeA.vy -= fy;
+                        nodeB.vx += fx;
+                        nodeB.vy += fy;
+                    }
+                }
+                
+                // Attraction spring forces through active links
+                graphLinks.forEach(link => {
+                    const sourceNode = graphNodes.find(n => n.id === link.source);
+                    const targetNode = graphNodes.find(n => n.id === link.target);
+                    if (!sourceNode || !targetNode) return;
+                    
+                    const dx = targetNode.x - sourceNode.x;
+                    const dy = targetNode.y - sourceNode.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                    
+                    // Hooke's Law: pull nodes closer
+                    const restLength = 80;
+                    const force = kAttract * (dist - restLength);
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+                    
+                    sourceNode.vx += fx;
+                    sourceNode.vy += fy;
+                    targetNode.vx -= fx;
+                    targetNode.vy -= fy;
+                });
+                
+                // Central attraction force (keep graph centered)
+                graphNodes.forEach(node => {
+                    const cx = width / 2;
+                    const cy = height / 2;
+                    node.vx += (cx - node.x) * 0.015;
+                    node.vy += (cy - node.y) * 0.015;
+                    
+                    // Apply velocity & dampen
+                    node.x += node.vx;
+                    node.y += node.vy;
+                    node.vx *= dampening;
+                    node.vy *= dampening;
+                    
+                    // Constrain boundary
+                    node.x = Math.max(20, Math.min(width - 20, node.x));
+                    node.y = Math.max(20, Math.min(height - 20, node.y));
+                });
+                
+                // Render elements
+                renderSVGGraphElements(svg, width, height);
+                
+                // loop animation
+                graphAnimationId = requestAnimationFrame(tick);
+            }
+            
+            // Launch simulation
+            tick();
+        }
+
+        // Render Graph elements in real-time coordinates
+        function renderSVGGraphElements(svg, width, height) {
+            svg.innerHTML = ""; // Clear canvas
+            
+            // 1. Draw Links
+            graphLinks.forEach(link => {
+                const s = graphNodes.find(n => n.id === link.source);
+                const t = graphNodes.find(n => n.id === link.target);
+                if (!s || !t) return;
+                
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", s.x);
+                line.setAttribute("y1", s.y);
+                line.setAttribute("x2", t.x);
+                line.setAttribute("y2", t.y);
+                line.setAttribute("class", `link-line ${link.type}`);
+                svg.appendChild(line);
+            });
+            
+            // 2. Draw Nodes
+            graphNodes.forEach(node => {
+                const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                group.setAttribute("style", "cursor: pointer;");
+                group.addEventListener("click", () => openFileViewer(node.id));
+                
+                const circ = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                circ.setAttribute("cx", node.x);
+                circ.setAttribute("cy", node.y);
+                circ.setAttribute("r", node.val === 5 ? 12 : 9);
+                
+                let badgeClass = "docs";
+                if (node.type === "sql") badgeClass = "sql";
+                else if (node.type === "py") badgeClass = "python";
+                else if (node.type === "yaml" || node.type === "yml") badgeClass = "configs";
+                
+                circ.setAttribute("class", `node-circle ${badgeClass}`);
+                group.appendChild(circ);
+                
+                // Node Text Basename Label
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute("x", node.x);
+                text.setAttribute("y", node.y + (node.val === 5 ? 22 : 18));
+                text.setAttribute("class", "node-text");
+                text.textContent = node.id;
+                
+                group.appendChild(text);
+                svg.appendChild(group);
+            });
+        }
+
+        // Overlay Slide drawer controller
+        function toggleOverlay(open) {
+            const panel = document.getElementById("overlay-panel");
+            if (open) panel.classList.add("open");
+            else panel.classList.remove("open");
+        }
+
+        // Open Drawer and render file chunks in tabs
+        function openFileViewer(fileName) {
+            toggleOverlay(true);
+            document.getElementById("overlay-filename").innerText = `Inspecting: ${fileName}`;
+            
+            // Find all matching chunks in our retrieved cache or load via active fetch
+            let matchedChunks = currentlyRetrievedChunks.filter(c => c.file_name === fileName);
+            
+            const tabsEl = document.getElementById("overlay-tabs");
+            const codeEl = document.getElementById("overlay-code");
+            
+            if (matchedChunks.length === 0) {
+                // If it's clicked from sidebar list (not active retrieved chunks), fetch file or show mock loader
+                tabsEl.innerHTML = `<span class="code-tab active">Full File Content</span>`;
+                codeEl.innerText = `[LOADING FILE FROM SIMULATED S3]\nFetching contents of ${fileName}...\n\n(For this local POC, clicking active nodes in the visualizer graph retrieves the exact structured RAG chunks!)\n\nFile: s3_bucket/${fileName}`;
+                return;
+            }
+            
+            // Generate Tabs for each retrieved chunk of this file
+            tabsEl.innerHTML = matchedChunks.map((chunk, idx) => `
+                <div class="code-tab ${idx === 0 ? 'active' : ''}" onclick="selectChunkTab(this, '${chunk.id}')">
+                    Segment ${idx + 1} (${chunk.type})
+                </div>
+            `).join("");
+            
+            // Render first chunk content
+            codeEl.innerText = matchedChunks[0].content;
+        }
+
+        function selectChunkTab(tabElement, chunkId) {
+            // Toggle active status
+            const tabs = tabElement.parentElement.querySelectorAll(".code-tab");
+            tabs.forEach(t => t.classList.remove("active"));
+            tabElement.classList.add("active");
+            
+            // Load chunk content
+            const chunk = currentlyRetrievedChunks.find(c => c.id === chunkId);
+            if (chunk) {
+                document.getElementById("overlay-code").innerText = chunk.content;
+            }
+        }
+    </script>
+</body>
+</html>

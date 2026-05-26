@@ -1,0 +1,29 @@
+# ClickHouse Ingestion Service Configuration
+# File: s3_bucket/configs/analytics_config.yaml
+# Environment: Production
+
+service:
+  name: "analytics-etl"
+  version: "1.2.0"
+  entrypoint: "python/etl_pipeline.py"
+  logging:
+    level: "INFO"
+    format: "json"
+
+clickhouse:
+  host: "clickhouse-prod.internal.net"
+  port: 9000
+  secure: true
+  database: "analytics"
+  cluster: "analytics_cluster"
+  tables:
+    raw: "analytics.raw_sales"
+    aggregates: "analytics.sales_aggregates_local"
+    materialized_view: "analytics.mv_sales_aggregates"
+
+s3_ingestion:
+  bucket: "company-knowledge"
+  prefix: "sales_data/"
+  file_pattern: "*.csv"
+  max_batch_size: 50000
+  schedule_cron: "0 * * * *"
