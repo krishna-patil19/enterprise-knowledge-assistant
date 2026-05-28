@@ -1,40 +1,38 @@
-import sqlite3
 import os
+from dotenv import load_dotenv
+import clickhouse_connect
 
-conn = sqlite3.connect('backend/knowledge_assistant.db')
-conn.row_factory = sqlite3.Row
+load_dotenv()
 
-print("=" * 70)
-print("  SQLite DATABASE CONTENTS")
-print("=" * 70)
+host = os.getenv('CLICKHOUSE_HOST')
+port = int(os.getenv('CLICKHOUSE_PORT', 8443))
+user = os.getenv('CLICKHOUSE_USER', 'default')
+password = os.getenv('CLICKHOUSE_PASSWORD', '')
 
-# FILES
-print("\n--- FILES ---")
-for r in conn.execute("SELECT path, bucket_folder, hash FROM files"):
-    print(f"  [{r['bucket_folder']:8s}] {os.path.basename(r['path'])}")
+client = clickhouse_connect.get_client(
+    host=host, port=port, username=user, password=password, secure=True
+)
 
-# CHUNKS
-print("\n--- ALL CHUNKS ---")
-for r in conn.execute("SELECT id, file_path, chunk_type, content FROM chunks"):
-    fname = os.path.basename(r['file_path'])
-    preview = r['content'][:100].replace('\n', ' ')
-    print(f"  {r['id']:55s} | {fname:30s} | {r['chunk_type']:12s}")
-    print(f"    \"{preview}...\"")
-    print()
+print("\n--- FILES IN CLICKHOUSE ---")
+res = client.query("SELECT path, bucket_folder FROM files LIMIT 5")
+for row in res.result_rows:
+    print(f"[{row[1]}] {os.path.basename(row[0])}")
 
-# EMBEDDINGS
-count = conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
-print(f"--- EMBEDDINGS: {count} vectors stored ---\n")
+print("\n--- CHUNKS STORED ---")
+res = client.query("SELECT id, chunk_type, substring(content, 1, 80) FROM chunks LIMIT 5")
+for row in res.result_rows:
+    print(f"{row[0]:45s} | {row[1]:10s} | {row[2]}...")
 
-# RELATIONSHIPS
-print("--- RELATIONSHIPS ---")
-for r in conn.execute("SELECT source_path, target_path, source_chunk_id, target_chunk_id, rel_type, metadata FROM relationships"):
-    src = os.path.basename(r['source_path'])
-    tgt = os.path.basename(r['target_path'])
-    print(f"  {src:30s} --[{r['rel_type']}]--> {tgt}")
-    if r['source_chunk_id']:
-        print(f"    src_chunk: {r['source_chunk_id']}")
-    if r['target_chunk_id']:
-        print(f"    tgt_chunk: {r['target_chunk_id']}")
+print("\n--- RELATIONSHIPS GRAPH ---")
+res = client.query("SELECT source_path, target_path, rel_type FROM relationships LIMIT 10")
+for row in res.result_rows:
+    src = os.path.basename(row[0])
+    tgt = os.path.basename(row[1])
+    print(f"{src:25s} --[{row[2]:18s}]--> {tgt}")
 
-conn.close()
+print("\n--- TOTAL STATS ---")
+f = client.command("SELECT count() FROM files")
+c = client.command("SELECT count() FROM chunks")
+e = client.command("SELECT count() FROM embeddings")
+r = client.command("SELECT count() FROM relationships")
+print(f"Files: {f} | Chunks: {c} | Vectors: {e} | Links: {r}")

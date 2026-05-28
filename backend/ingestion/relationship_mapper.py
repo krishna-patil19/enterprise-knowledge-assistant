@@ -33,16 +33,14 @@ class RelationshipMapper:
             f_name = os.path.basename(f_path)
             
             # Fetch all chunks for this file
-            conn = database.get_connection()
-            cursor = conn.execute("SELECT id, content, metadata FROM chunks WHERE file_path = ?;", (f_path,))
+            rows = database.execute_query("SELECT id, content, metadata FROM chunks WHERE file_path = {p:String}", parameters={'p': f_path})
             chunks = []
-            for row in cursor.fetchall():
+            for row in rows:
                 chunks.append({
                     "id": row["id"],
                     "content": row["content"],
                     "metadata": json.loads(row["metadata"])
                 })
-            conn.close()
             
             file_details.append({
                 "path": f_path,

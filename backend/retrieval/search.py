@@ -4,7 +4,6 @@
 import os
 import logging
 import re
-import numpy as np
 from typing import List, Dict, Any, Tuple, Set
 from backend.retrieval import database
 from backend.services import EmbeddingService, LLMService, OPENAI_API_KEY
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 class HybridSearcher:
     """
     Advanced RAG Retrieval Engine.
-    Executes: Query PII Scrubbing -> Bucket Scoping -> FTS5 Keyword Search + NumPy Cosine Search ->
+    Executes: Query PII Scrubbing -> Bucket Scoping -> ClickHouse Keyword Search + ClickHouse Vector Cosine Search ->
     Reciprocal Rank Fusion (RRF) -> Relationship expansion -> LLM Reranking -> Compact context assembly.
     """
     
@@ -177,91 +176,50 @@ class HybridSearcher:
         return scopes
 
     def _fts_keyword_search(self, query: str) -> List[Tuple[str, float]]:
-        """Executes full-text keyword search in SQLite FTS5."""
-        conn = database.get_connection()
+        """Executes full-text keyword search natively in ClickHouse."""
         results = []
         try:
-            cursor = conn.cursor()
-            # FTS5 Match. We must clean up query for FTS special chars
             clean_query = re.sub(r'[^\w\s]', ' ', query).strip()
             if not clean_query:
                 return []
                 
-            # Standard FTS5 MATCH query with BM25 ranking (lower score = better in SQLite BM25,
-            # so we invert it for ranking similarity)
-            cursor.execute("""
-            SELECT chunk_id, bm25(chunks_fts) as score 
-            FROM chunks_fts 
-            WHERE chunks_fts MATCH ? 
-            ORDER BY score ASC 
-            LIMIT 50;
-            """, (clean_query,))
+            words = [w for w in clean_query.split() if len(w) > 2]
+            if not words:
+                return []
+                
+            # Use ClickHouse positionCaseInsensitive
+            conditions = " OR ".join([f"positionCaseInsensitive(content, '{w}') > 0" for w in words])
+            ch_query = f"SELECT id FROM chunks WHERE {conditions} LIMIT 50"
+            rows = database.execute_query(ch_query)
             
-            for idx, row in enumerate(cursor.fetchall()):
-                # SQLite BM25 score is negative, lower is better. We map rank to a high positive score
-                results.append((row["chunk_id"], 100.0 / (idx + 1)))
+            for idx, row in enumerate(rows):
+                results.append((row["id"], 100.0 / (idx + 1)))
         except Exception as e:
-            # Fallback to simple LIKE search if FTS5 syntax fails
-            logger.warning(f"FTS MATCH query failed: {str(e)}. Falling back to SQL LIKE search.")
-            try:
-                words = [w for w in re.sub(r'[^\w\s]', ' ', query).split() if len(w) > 2]
-                if words:
-                    like_clauses = " OR ".join(["content LIKE ?" for _ in words])
-                    params = [f"%{w}%" for w in words]
-                    cursor = conn.execute(f"SELECT id FROM chunks WHERE {like_clauses} LIMIT 50;", params)
-                    results = [(row["id"], 1.0) for row in cursor.fetchall()]
-            except Exception:
-                pass
-        finally:
-            conn.close()
+            logger.warning(f"Keyword search failed: {str(e)}")
         return results
 
     def _vector_cosine_search(self, query: str) -> List[Tuple[str, float]]:
-        """Computes dense vector similarity against database vectors using NumPy."""
+        """Computes dense vector similarity natively inside ClickHouse Cloud using cosineDistance."""
         query_vector = EmbeddingService.get_embedding(query)
         if not query_vector:
             return []
             
-        all_embeddings = database.get_all_embeddings()
-        if not all_embeddings:
-            return []
+        try:
+            # ClickHouse has native cosineDistance which returns 0 for identical vectors, 1 for orthogonal
+            # So similarity = 1 - cosineDistance
+            ch_query = "SELECT chunk_id, (1 - cosineDistance(embedding, {q:Array(Float32)})) as similarity FROM embeddings ORDER BY similarity DESC LIMIT 50"
+            rows = database.execute_query(ch_query, parameters={'q': query_vector})
             
-        # Convert to numpy arrays for vector math
-        chunk_ids = [item[0] for item in all_embeddings]
-        vectors = np.array([item[1] for item in all_embeddings])
-        q_vec = np.array(query_vector)
-        
-        # Calculate Cosine Similarities: dot(A, B) / (norm(A) * norm(B))
-        norms = np.linalg.norm(vectors, axis=1)
-        q_norm = np.linalg.norm(q_vec)
-        
-        # Handle zero divisions
-        norms[norms == 0] = 1e-9
-        if q_norm == 0:
-            q_norm = 1e-9
-            
-        similarities = np.dot(vectors, q_vec) / (norms * q_norm)
-        
-        # In mock mode, add a word overlap boost to simulate semantic match
-        if not OPENAI_API_KEY:
-            q_words = set(re.sub(r'[^\w\s]', ' ', query).lower().split())
-            for idx, cid in enumerate(chunk_ids):
-                chunk = database.get_chunk_by_id(cid)
-                if chunk:
-                    c_words = set(re.sub(r'[^\w\s]', ' ', chunk["content"]).lower().split())
-                    overlap = len(q_words.intersection(c_words))
-                    if overlap > 0:
-                        similarities[idx] += 0.5 * (overlap / len(q_words))
-        
-        results = []
-        for idx, score in enumerate(similarities):
+            results = []
             threshold = 0.05 if not OPENAI_API_KEY else 0.1
-            if score > threshold:
-                results.append((chunk_ids[idx], float(score)))
-                
-        # Sort descending
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:50]
+            for row in rows:
+                score = float(row['similarity'])
+                if score > threshold:
+                    results.append((row['chunk_id'], score))
+            return results
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}")
+            return []
 
     def _reciprocal_rank_fusion(self, keyword_list: List[Tuple[str, float]], vector_list: List[Tuple[str, float]], k: int = 60) -> List[Tuple[str, float]]:
         """Combines search indexes using Reciprocal Rank Fusion (RRF)."""
@@ -282,48 +240,39 @@ class HybridSearcher:
         return sorted_rrf
 
     def _expand_relationships(self, chunks: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """
-        Crawls the relationship graph to fetch adjacent technical nodes.
-        If a SQL query is retrieved, we also fetch its related Python pipeline or guide.
-        """
+        """Crawls the relationship graph to fetch adjacent technical nodes."""
         expanded = list(chunks)
         already_added = {c["id"] for c in chunks}
         relations_pulled = []
         
-        conn = database.get_connection()
         try:
             for chunk in chunks:
                 chunk_id = chunk["id"]
                 file_path = chunk["file_path"]
                 
-                # Find relationships where this chunk (or its parent file globally) is involved
-                cursor = conn.execute("""
+                ch_query = """
                 SELECT * FROM relationships 
-                WHERE source_chunk_id = ? OR target_chunk_id = ?
-                OR (source_path = ? AND source_chunk_id IS NULL)
-                OR (target_path = ? AND target_chunk_id IS NULL);
-                """, (chunk_id, chunk_id, file_path, file_path))
+                WHERE source_chunk_id = {c:String} OR target_chunk_id = {c:String}
+                OR (source_path = {p:String} AND source_chunk_id IS NULL)
+                OR (target_path = {p:String} AND target_chunk_id IS NULL)
+                """
+                rows = database.execute_query(ch_query, parameters={'c': chunk_id, 'p': file_path})
                 
-                for row in cursor.fetchall():
-                    rel = dict(row)
-                    
-                    # Pull in the missing half of the relationship if we don't already have it
-                    if rel["source_chunk_id"] and rel["source_chunk_id"] not in already_added:
-                        c = database.get_chunk_by_id(rel["source_chunk_id"])
+                for row in rows:
+                    if row["source_chunk_id"] and row["source_chunk_id"] not in already_added:
+                        c = database.get_chunk_by_id(row["source_chunk_id"])
                         if c:
                             expanded.append(c)
                             already_added.add(c["id"])
-                            relations_pulled.append(rel)
-                            
-                    if rel["target_chunk_id"] and rel["target_chunk_id"] not in already_added:
-                        c = database.get_chunk_by_id(rel["target_chunk_id"])
+                            relations_pulled.append(row)
+                    if row["target_chunk_id"] and row["target_chunk_id"] not in already_added:
+                        c = database.get_chunk_by_id(row["target_chunk_id"])
                         if c:
                             expanded.append(c)
                             already_added.add(c["id"])
-                            relations_pulled.append(rel)
-                            
-        finally:
-            conn.close()
+                            relations_pulled.append(row)
+        except Exception as e:
+            logger.error(f"Relationship expansion failed: {e}")
             
         return expanded, relations_pulled
 

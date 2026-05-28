@@ -1,14 +1,27 @@
+import os
+import sys
+from dotenv import load_dotenv
 import clickhouse_connect
-import time
 
-print("Waiting for ClickHouse server to initialize...")
-for _ in range(30):
-    try:
-        client = clickhouse_connect.get_client(host='localhost', port=8123, username='default', password='')
-        print("CLICKHOUSE IS UP!")
-        exit(0)
-    except Exception as e:
-        time.sleep(1)
+load_dotenv()
 
-print("Failed to connect to ClickHouse within 30 seconds.")
-exit(1)
+host = os.getenv('CLICKHOUSE_HOST', 'localhost')
+port = int(os.getenv('CLICKHOUSE_PORT', 8443))
+user = os.getenv('CLICKHOUSE_USER', 'default')
+password = os.getenv('CLICKHOUSE_PASSWORD', '')
+
+print(f"Connecting to: {host}:{port} as {user}")
+
+try:
+    client = clickhouse_connect.get_client(
+        host=host,
+        port=port,
+        username=user,
+        password=password,
+        secure=True if 'cloud' in host else False
+    )
+    version = client.command("SELECT version()")
+    print(f"SUCCESS! Connected to ClickHouse version: {version}")
+except Exception as e:
+    print(f"FAILED to connect: {str(e)}")
+    sys.exit(1)
