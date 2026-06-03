@@ -1,16 +1,19 @@
 # Model and API Services for Enterprise Engineering Knowledge Assistant
 # File: backend/services.py
+# Supports dual providers: AWS Bedrock (default) and OpenAI (fallback)
 
 import os
 import re
+import json
 import logging
 import numpy as np
 from typing import List, Dict, Any, Generator
-from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
 # Load keys from .env file in workspace root if present
+# ---------------------------------------------------------------------------
 env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 if os.path.exists(env_path):
     try:
@@ -25,81 +28,236 @@ if os.path.exists(env_path):
     except Exception as e:
         logger.warning(f"Failed to read .env file: {str(e)}")
 
-# Try to fetch API key from environment
+# ---------------------------------------------------------------------------
+# Provider Configuration
+# ---------------------------------------------------------------------------
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "bedrock").lower()  # "bedrock" or "openai"
+
+# OpenAI config
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 if OPENAI_API_KEY.startswith("your_") or len(OPENAI_API_KEY) < 20:
-    logger.info("OPENAI_API_KEY is empty or a placeholder. Forcing local simulation mode.")
     OPENAI_API_KEY = ""
 
+# AWS Bedrock config
+AWS_REGION = os.environ.get("AWS_REGION", "ap-south-1")
+BEDROCK_LLM_MODEL = os.environ.get("BEDROCK_LLM_MODEL", "anthropic.claude-3-haiku-20240307")
+BEDROCK_EMBED_MODEL = os.environ.get("BEDROCK_EMBED_MODEL", "amazon.titan-embed-text-v2:0")
+
+# Check if AWS credentials are available (explicit keys in .env OR AWS CLI profile)
+AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+_HAS_EXPLICIT_KEYS = bool(AWS_ACCESS_KEY and AWS_SECRET_KEY and len(AWS_ACCESS_KEY) > 10)
+
+# Also check if AWS CLI profile exists (~/.aws/credentials)
+_HAS_AWS_CLI_PROFILE = os.path.exists(os.path.expanduser("~/.aws/credentials"))
+
+HAS_AWS_CREDS = _HAS_EXPLICIT_KEYS or _HAS_AWS_CLI_PROFILE
+
+if _HAS_EXPLICIT_KEYS:
+    logger.info(f"LLM Provider: {LLM_PROVIDER} | AWS Region: {AWS_REGION} | Auth: Explicit keys in .env")
+elif _HAS_AWS_CLI_PROFILE:
+    logger.info(f"LLM Provider: {LLM_PROVIDER} | AWS Region: {AWS_REGION} | Auth: AWS CLI profile (~/.aws/credentials)")
+else:
+    logger.info(f"LLM Provider: {LLM_PROVIDER} | AWS Region: {AWS_REGION} | Auth: No AWS credentials found")
+
+
+def _get_bedrock_client(service_name: str = "bedrock-runtime"):
+    """Creates a Boto3 Bedrock Runtime client.
+    Uses explicit keys from .env if available, otherwise falls back to AWS CLI profile.
+    """
+    import boto3
+    if _HAS_EXPLICIT_KEYS:
+        return boto3.client(
+            service_name=service_name,
+            region_name=AWS_REGION,
+            aws_access_key_id=AWS_ACCESS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY,
+        )
+    else:
+        # Use default credential chain (AWS CLI profile, env vars, IAM role, etc.)
+        return boto3.client(
+            service_name=service_name,
+            region_name=AWS_REGION,
+        )
+
+
+# ===========================================================================
+# Embedding Service
+# ===========================================================================
 class EmbeddingService:
     """
-    Abstrated service to generate dense text embeddings.
-    Defaults to OpenAI text-embedding-3-small (1536-dimensional).
-    Falls back to a deterministic local hashing vector generator if no API key is present.
+    Abstracted service to generate dense text embeddings.
+    Supports: AWS Bedrock Titan Embed v2 (1024-dim) or OpenAI text-embedding-3-small (1536-dim).
+    Falls back to a deterministic local hashing vector generator if no API credentials are present.
     """
+
+    # Dimension depends on provider
+    EMBEDDING_DIM = 1024 if LLM_PROVIDER == "bedrock" else 1536
+
     @classmethod
     def get_embedding(cls, text: str) -> List[float]:
-        if not OPENAI_API_KEY:
-            # Deterministic mock embedding generator for offline testing
-            # Generates a pseudo-random unit vector of dimension 1536 based on text hash
-            logger.warning("OPENAI_API_KEY not found in environment. Using Local Mock Embeddings.")
-            return cls._generate_mock_embedding(text)
-            
-        try:
-            client = OpenAI(api_key=OPENAI_API_KEY)
-            response = client.embeddings.create(
-                input=[text],
-                model="text-embedding-3-small"
-            )
-            return response.data[0].embedding
-        except Exception as e:
-            logger.error(f"OpenAI Embedding API call failed: {str(e)}. Falling back to mock embeddings.")
+        if LLM_PROVIDER == "bedrock" and HAS_AWS_CREDS:
+            return cls._get_bedrock_embedding(text)
+        elif LLM_PROVIDER == "openai" and OPENAI_API_KEY:
+            return cls._get_openai_embedding(text)
+        else:
+            logger.warning("No API credentials found. Using Local Mock Embeddings.")
             return cls._generate_mock_embedding(text)
 
     @classmethod
     def get_embeddings(cls, texts: List[str]) -> List[List[float]]:
-        if not OPENAI_API_KEY:
-            logger.warning("OPENAI_API_KEY not found in environment. Using Local Mock Embeddings.")
-            return [cls._generate_mock_embedding(t) for t in texts]
-            
+        # Bedrock Titan doesn't have a batch endpoint, so we loop
+        return [cls.get_embedding(t) for t in texts]
+
+    # --- Bedrock Titan Embed v2 ---
+    @classmethod
+    def _get_bedrock_embedding(cls, text: str) -> List[float]:
         try:
+            client = _get_bedrock_client()
+            body = json.dumps({
+                "inputText": text[:8000],  # Titan v2 max input ~8k chars
+                "dimensions": 1024,
+                "normalize": True
+            })
+            response = client.invoke_model(
+                modelId=BEDROCK_EMBED_MODEL,
+                contentType="application/json",
+                accept="application/json",
+                body=body,
+            )
+            result = json.loads(response["body"].read())
+            return result["embedding"]
+        except Exception as e:
+            logger.error(f"Bedrock Embedding API call failed: {str(e)}. Falling back to mock.")
+            return cls._generate_mock_embedding(text)
+
+    # --- OpenAI ---
+    @classmethod
+    def _get_openai_embedding(cls, text: str) -> List[float]:
+        try:
+            from openai import OpenAI
             client = OpenAI(api_key=OPENAI_API_KEY)
+            
+            # OpenAI's limit is 8192 tokens (~30k chars). Safely truncate.
+            safe_text = text[:24000]
+            
             response = client.embeddings.create(
-                input=texts,
+                input=[safe_text],
                 model="text-embedding-3-small"
             )
-            return [data.embedding for data in response.data]
+            return response.data[0].embedding
         except Exception as e:
-            logger.error(f"OpenAI Multi-Embedding API call failed: {str(e)}")
-            return [cls._generate_mock_embedding(t) for t in texts]
+            logger.error(f"OpenAI Embedding API call failed: {str(e)}. Falling back to mock.")
+            return cls._generate_mock_embedding(text)
 
+    # --- Mock (offline) ---
     @classmethod
     def _generate_mock_embedding(cls, text: str) -> List[float]:
-        # Generates a 1536-dimension float vector that is consistent for identical texts
-        # We seed standard numpy random using the hash of the text
+        # Generates a consistent vector of the configured dimension based on text hash
         h = hash(text) & 0xffffffff
         rng = np.random.default_rng(h)
-        vec = rng.standard_normal(1536)
-        # Normalize to unit vector
+        vec = rng.standard_normal(cls.EMBEDDING_DIM)
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
         return vec.tolist()
 
 
+# ===========================================================================
+# LLM Service
+# ===========================================================================
 class LLMService:
     """
     Abstracted service for LLM completions and streaming.
-    Defaults to OpenAI gpt-4o-mini for technical reasoning.
+    Supports: AWS Bedrock Claude 3 Haiku or OpenAI GPT-4o-mini.
     Falls back to a smart local rule-based response generator for offline POC.
     """
+
     @classmethod
     def chat_completion(cls, system_prompt: str, user_prompt: str) -> str:
-        if not OPENAI_API_KEY:
-            logger.warning("OPENAI_API_KEY not found. Using offline response simulator.")
+        if LLM_PROVIDER == "bedrock" and HAS_AWS_CREDS:
+            return cls._bedrock_chat_completion(system_prompt, user_prompt)
+        elif LLM_PROVIDER == "openai" and OPENAI_API_KEY:
+            return cls._openai_chat_completion(system_prompt, user_prompt)
+        else:
+            logger.warning("No API credentials found. Using offline response simulator.")
             return cls._generate_mock_completion(system_prompt, user_prompt)
-            
+
+    @classmethod
+    def chat_completion_stream(cls, system_prompt: str, user_prompt: str) -> Generator[str, None, None]:
+        if LLM_PROVIDER == "bedrock" and HAS_AWS_CREDS:
+            yield from cls._bedrock_chat_completion_stream(system_prompt, user_prompt)
+        elif LLM_PROVIDER == "openai" and OPENAI_API_KEY:
+            yield from cls._openai_chat_completion_stream(system_prompt, user_prompt)
+        else:
+            logger.warning("No API credentials found. Using offline streaming simulator.")
+            yield from cls._generate_mock_completion_stream(system_prompt, user_prompt)
+
+    # -----------------------------------------------------------------------
+    # AWS Bedrock — Claude 3 Haiku
+    # -----------------------------------------------------------------------
+    @classmethod
+    def _bedrock_chat_completion(cls, system_prompt: str, user_prompt: str) -> str:
         try:
+            client = _get_bedrock_client()
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2048,
+                "temperature": 0.1,
+                "system": system_prompt,
+                "messages": [
+                    {"role": "user", "content": user_prompt}
+                ]
+            })
+            response = client.invoke_model(
+                modelId=BEDROCK_LLM_MODEL,
+                contentType="application/json",
+                accept="application/json",
+                body=body,
+            )
+            result = json.loads(response["body"].read())
+            return result["content"][0]["text"]
+        except Exception as e:
+            logger.error(f"Bedrock LLM Call failed: {str(e)}")
+            return cls._generate_mock_completion(system_prompt, user_prompt)
+
+    @classmethod
+    def _bedrock_chat_completion_stream(cls, system_prompt: str, user_prompt: str) -> Generator[str, None, None]:
+        try:
+            client = _get_bedrock_client()
+            body = json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 2048,
+                "temperature": 0.1,
+                "system": system_prompt,
+                "messages": [
+                    {"role": "user", "content": user_prompt}
+                ]
+            })
+            response = client.invoke_model_with_response_stream(
+                modelId=BEDROCK_LLM_MODEL,
+                contentType="application/json",
+                accept="application/json",
+                body=body,
+            )
+            for event in response["body"]:
+                chunk = json.loads(event["chunk"]["bytes"])
+                if chunk.get("type") == "content_block_delta":
+                    delta = chunk.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        yield delta["text"]
+        except Exception as e:
+            logger.error(f"Bedrock LLM Stream failed: {str(e)}")
+            yield f"\n[SYSTEM NOTICE: Bedrock API call failed: {str(e)}. Falling back to offline simulator...]\n"
+            yield from cls._generate_mock_completion_stream(system_prompt, user_prompt)
+
+    # -----------------------------------------------------------------------
+    # OpenAI — GPT-4o-mini (fallback provider)
+    # -----------------------------------------------------------------------
+    @classmethod
+    def _openai_chat_completion(cls, system_prompt: str, user_prompt: str) -> str:
+        try:
+            from openai import OpenAI
             client = OpenAI(api_key=OPENAI_API_KEY)
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -115,13 +273,9 @@ class LLMService:
             return cls._generate_mock_completion(system_prompt, user_prompt)
 
     @classmethod
-    def chat_completion_stream(cls, system_prompt: str, user_prompt: str) -> Generator[str, None, None]:
-        if not OPENAI_API_KEY:
-            logger.warning("OPENAI_API_KEY not found. Using offline streaming simulator.")
-            yield from cls._generate_mock_completion_stream(system_prompt, user_prompt)
-            return
-
+    def _openai_chat_completion_stream(cls, system_prompt: str, user_prompt: str) -> Generator[str, None, None]:
         try:
+            from openai import OpenAI
             client = OpenAI(api_key=OPENAI_API_KEY)
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -140,6 +294,9 @@ class LLMService:
             yield f"\n[SYSTEM NOTICE: OpenAI API call failed: {str(e)}. Falling back to offline simulator...]\n"
             yield from cls._generate_mock_completion_stream(system_prompt, user_prompt)
 
+    # -----------------------------------------------------------------------
+    # Offline Mock (no credentials)
+    # -----------------------------------------------------------------------
     @classmethod
     def _generate_mock_completion(cls, system_prompt: str, user_prompt: str) -> str:
         # Rules-based completion generator that reads the injected context to answer queries logically.

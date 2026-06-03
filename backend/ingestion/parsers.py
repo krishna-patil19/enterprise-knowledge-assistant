@@ -397,11 +397,14 @@ class ConfigParser:
             except Exception:
                 pass
                 
+        # Truncate content to avoid LLM context window explosion for giant JSONs
+        safe_content = content[:80000]
+                
         return [{
             "id": f"{file_name}_config",
-            "content": content,
+            "content": safe_content,
             "type": "config",
-            "token_count": estimate_tokens(content),
+            "token_count": estimate_tokens(safe_content),
             "metadata": metadata
         }]
 
@@ -468,12 +471,22 @@ def parse_file(file_path: str) -> List[Dict[str, Any]]:
         # PDFs need the absolute file path, not just string content
         return PDFParser.parse(file_path, file_name)
     else:
-        # Fallback text chunker
-        chunk_content = content.strip()
-        return [{
-            "id": f"{file_name}_text",
-            "content": chunk_content,
-            "type": "docs",
-            "token_count": estimate_tokens(chunk_content),
-            "metadata": {"file_name": file_name, "fallback": True}
-        }]
+        # Fallback text chunker (sliding character window for safety against massive files)
+        chunks = []
+        chunk_chars = 4000
+        overlap = 500
+        text = content.strip()
+        if not text:
+            return []
+            
+        for idx in range(0, len(text), chunk_chars - overlap):
+            chunk_content = text[idx:idx + chunk_chars]
+            chunk_id = f"{file_name}_text_{idx // (chunk_chars - overlap) + 1}"
+            chunks.append({
+                "id": chunk_id,
+                "content": chunk_content,
+                "type": "docs",
+                "token_count": estimate_tokens(chunk_content),
+                "metadata": {"file_name": file_name, "fallback": True}
+            })
+        return chunks

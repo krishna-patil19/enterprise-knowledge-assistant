@@ -86,7 +86,7 @@ class RelationshipMapper:
                     
                     # If File A explicitly mentions File B's name in its content (like Markdown or docstring)
                     if name_b.lower() in content_lower:
-                        rel_type = "documentation" if file_a["folder"] == "docs" else "references_file"
+                        rel_type = "documentation" if name_a.endswith((".md", ".rst", ".txt")) else "references_file"
                         database.save_relationship(
                             source_path=path_a,
                             target_path=path_b,
@@ -124,7 +124,7 @@ class RelationshipMapper:
                                     )
 
                 # --- Link Category 3: Configuration mappings (e.g. YAML config lists Python entrypoint) ---
-                if file_a["folder"] == "configs" and "linked_assets" in file_meta:
+                if name_a.endswith((".yaml", ".yml", ".json")) and "linked_assets" in file_meta:
                     for asset in file_meta["linked_assets"]:
                         if asset.lower() in path_b.lower() or name_b.lower() in asset.lower():
                             database.save_relationship(
@@ -137,7 +137,7 @@ class RelationshipMapper:
                             )
                 
                 # --- Link Category 4: Python imports of adjacent Python modules ---
-                if file_a["folder"] == "python" and file_b["folder"] == "python":
+                if name_a.endswith(".py") and name_b.endswith(".py"):
                     name_b_no_ext = os.path.splitext(name_b)[0]
                     # Check imports in file A metadata
                     imports_a = file_meta.get("imports", [])
