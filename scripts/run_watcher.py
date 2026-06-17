@@ -13,8 +13,8 @@ logging.basicConfig(
 
 if __name__ == "__main__":
     # Point to the simulated S3 bucket
-    project_root = os.path.dirname(os.path.abspath(__file__))
-    s3_bucket_dir = os.path.join(project_root, "s3_bucket")
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    s3_bucket_dir = os.path.join(project_root, "data")
     
     watcher = S3Watcher(s3_bucket_dir)
     watcher.start()

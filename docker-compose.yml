@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  knowledge-assistant:
+    build: .
+    container_name: knowledge-assistant
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    restart: unless-stopped

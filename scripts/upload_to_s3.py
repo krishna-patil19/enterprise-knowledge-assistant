@@ -21,7 +21,7 @@ if aws_key and aws_secret and len(aws_key) > 10:
 else:
     s3 = boto3.client("s3", region_name=region)
 
-base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "s3_bucket")
+base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 # Bucket 1: SQL + Python
 bucket1_files = {

@@ -20,7 +20,7 @@ class IngestionPipeline:
     """
     Ingestion Service.
     Supports multi-mode storage sources:
-    1. "local" - Scans files in s3_bucket/
+    1. "local" - Scans files in data/
     2. "s3" - Scans files in a real AWS S3 bucket
     3. "github" - Clones a public github repo and scans it
     """
@@ -39,7 +39,7 @@ class IngestionPipeline:
         
         if s3_root is None:
             base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            s3_root = os.path.join(base_dir, "s3_bucket")
+            s3_root = os.path.join(base_dir, "data")
             
         self.s3_root = s3_root
         

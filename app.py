@@ -197,7 +197,7 @@ def get_file_badge(filename: str) -> str:
 
 
 def route_uploaded_file(filename: str) -> str:
-    """Determines the s3_bucket subfolder for an uploaded file by extension."""
+    """Determines the data subfolder for an uploaded file by extension."""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     folder_map = {
         "sql": "sql",
@@ -391,7 +391,7 @@ with st.sidebar:
 
     # --- Re-index Button ---
     if st.button("🔄 Re-index All Documents", use_container_width=True):
-        with st.spinner("Scanning s3_bucket/ and re-indexing..."):
+        with st.spinner("Scanning data/ and re-indexing..."):
             stats = st.session_state.pipeline.run_scan_and_index()
         st.success(
             f"Scanned: {stats['scanned']} · "
