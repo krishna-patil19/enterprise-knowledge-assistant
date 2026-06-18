@@ -25,6 +25,7 @@ A specialized **Retrieval-Augmented Generation (RAG)** search system for softwar
 | [Streamlit](https://streamlit.io) | Interactive chat interface and document uploader |
 | [ClickHouse Cloud](https://clickhouse.com) | Vector database, Full-Text Search engine, and Graph storage |
 | [OpenAI](https://openai.com) | Fast vector embeddings (`text-embedding-3-small`) and Generation (`gpt-4o-mini`) |
+| [AWS S3](https://aws.amazon.com/s3/) | Scalable storage bucket for raw document ingestion |
 | [Python 3.10+](https://python.org) | AST Parsing, Orchestration, and Data Ingestion |
 
 ---
@@ -34,6 +35,7 @@ A specialized **Retrieval-Augmented Generation (RAG)** search system for softwar
 - Python 3.10+
 - A [ClickHouse Cloud](https://clickhouse.com) account and cluster credentials
 - An [OpenAI](https://openai.com) API key for embeddings and chat generation
+- An [AWS](https://aws.amazon.com/) account with S3 access keys for document storage
 
 ---
 
@@ -95,6 +97,11 @@ CLICKHOUSE_HOST=your-clickhouse-cloud-endpoint.aws.clickhouse.cloud
 CLICKHOUSE_PORT=8443
 CLICKHOUSE_USER=default
 CLICKHOUSE_PASSWORD=your_clickhouse_cloud_password_here
+
+# AWS Credentials for S3 Ingestion
+AWS_ACCESS_KEY_ID=your_aws_access_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+AWS_REGION=us-east-1
 ```
 
 ---
