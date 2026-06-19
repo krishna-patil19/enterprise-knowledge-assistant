@@ -13,3 +13,4 @@ boto3>=1.34.0
 python-dotenv>=1.0.0
 pip-system-certs
 rank-bm25>=0.2.2
+streamlit-agraph>=0.0.45

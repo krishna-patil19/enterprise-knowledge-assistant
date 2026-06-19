@@ -22,7 +22,7 @@ class HybridSearcher:
         # Database schema initialized by pipeline, searcher just reads
         pass
 
-    def perform_rag_query(self, raw_query: str, limit: int = 5) -> Dict[str, Any]:
+    def perform_rag_query(self, raw_query: str, limit: int = 5, use_graph: bool = True) -> Dict[str, Any]:
         """
         Executes the entire retrieval pipeline.
         Returns: {
@@ -75,7 +75,10 @@ class HybridSearcher:
         top_candidates = [c[0] for c in scored_candidates[:20]] # Keep top 20 for expansion & reranking
         
         # 5. Relationship Expansion (Step 17 in Architecture)
-        expanded_chunks, relations_graph = self._expand_relationships(top_candidates)
+        if use_graph:
+            expanded_chunks, relations_graph = self._expand_relationships(top_candidates)
+        else:
+            expanded_chunks, relations_graph = top_candidates, []
         
         # 6. Reranking Layer (Step 18 in Architecture)
         # Narrow down our expanded context chunks to the best 5 using a listwise LLM reranker

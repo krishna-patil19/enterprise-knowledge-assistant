@@ -252,6 +252,7 @@ def stream_rag_answer(query: str):
     st.session_state._last_chunks = reranked
     st.session_state._last_pii = pii_censored
     st.session_state._last_scopes = list(scoped_folders)
+    st.session_state._last_relations = relations
 
     # 7. Build context prompt
     context_str = ""
@@ -463,6 +464,24 @@ for msg in st.session_state.messages:
                         except Exception as e:
                             st.info(f"Could not load file details: {str(e)}")
 
+        if msg["role"] == "assistant" and msg.get("relations"):
+            with st.expander("🕸️ Knowledge Graph Context", expanded=False):
+                dot_lines = [
+                    "digraph G {",
+                    '  rankdir=LR;',
+                    '  node [shape=box, style=filled, fillcolor="#f0f5ff", color="#4F8BF9", fontname="sans-serif", fontsize=12, penwidth=2];',
+                    '  edge [fontname="sans-serif", fontsize=10, color="#9ca3af"];'
+                ]
+                
+                for rel in msg["relations"]:
+                    src = os.path.basename(rel["source_path"])
+                    tgt = os.path.basename(rel["target_path"])
+                    label = rel["rel_type"]
+                    dot_lines.append(f'  "{src}" -> "{tgt}" [label="{label}"];')
+                    
+                dot_lines.append("}")
+                st.graphviz_chart("\n".join(dot_lines))
+
 # Welcome state when no messages
 if not st.session_state.messages:
     st.markdown("")
@@ -508,10 +527,13 @@ if hasattr(st.session_state, "_pending_query") and st.session_state._pending_que
             for c in st.session_state._last_chunks
         ]
 
+    relations = st.session_state.get("_last_relations", [])
+
     st.session_state.messages.append({
         "role": "assistant",
         "content": response,
         "sources": sources,
+        "relations": relations,
     })
     st.rerun()
 
@@ -538,9 +560,12 @@ if prompt := st.chat_input("Ask about your engineering documentation..."):
             for c in st.session_state._last_chunks
         ]
 
+    relations = st.session_state.get("_last_relations", [])
+
     st.session_state.messages.append({
         "role": "assistant",
         "content": response,
         "sources": sources,
+        "relations": relations,
     })
     st.rerun()
