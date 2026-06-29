@@ -24,7 +24,7 @@ A specialized **Retrieval-Augmented Generation (RAG)** search system for softwar
 |---|---|
 | [Streamlit](https://streamlit.io) | Interactive chat interface and document uploader |
 | [ClickHouse Cloud](https://clickhouse.com) | Vector database, Full-Text Search engine, and Graph storage |
-| [OpenAI](https://openai.com) | Fast vector embeddings (`text-embedding-3-small`) and Generation (`gpt-4o-mini`) |
+| [OpenAI](https://openai.com) | Fast vector embeddings (`text-embedding-3-small`) and Generation (`gpt-5.5`) |
 | [AWS S3](https://aws.amazon.com/s3/) | Scalable storage bucket for raw document ingestion |
 | [Python 3.10+](https://python.org) | AST Parsing, Orchestration, and Data Ingestion |
 

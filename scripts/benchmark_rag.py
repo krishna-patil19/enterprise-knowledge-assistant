@@ -23,11 +23,18 @@ TEST_QUERIES = [
 def evaluate_answers(query, ans_standard, ans_graph):
     """Uses LLM to blindly judge which answer is better."""
     system_prompt = (
-        "You are an impartial judge evaluating two RAG (Retrieval-Augmented Generation) systems.\n"
+        "You are an impartial but strict technical judge evaluating two RAG (Retrieval-Augmented Generation) systems.\n"
         "You will be given a query and two answers (Answer A and Answer B).\n"
-        "Score each answer from 1 to 10 based on completeness, accuracy, and technical detail.\n"
-        "Output ONLY a JSON object exactly like this, nothing else:\n"
-        "{\"score_a\": 7, \"score_b\": 9, \"reasoning\": \"Brief explanation\"}"
+        "Evaluate them strictly based on completeness, accuracy, and technical detail.\n"
+        "Use this strict rubric:\n"
+        "- 1-4: Incorrect, irrelevant, or highly incomplete.\n"
+        "- 5-6: Bare minimum answer. Technically correct but lacks depth or context.\n"
+        "- 7: Good answer, but noticeably missing some broader architectural context or file citations.\n"
+        "- 8: Very good answer. Accurate and complete, which should be the standard for a solid retrieval.\n"
+        "- 9: Excellent answer. Brings in adjacent context, configuration details, or specific file names.\n"
+        "- 10: Flawless. Provides exhaustive context and leaves nothing out.\n"
+        "Output ONLY a JSON object with your evaluation, using this exact format:\n"
+        "{\"reasoning\": \"Detailed explanation of your evaluation\", \"score_a\": 8, \"score_b\": 9}"
     )
     
     user_prompt = f"Query: {query}\n\n--- Answer A (Standard RAG) ---\n{ans_standard}\n\n--- Answer B (Graph RAG) ---\n{ans_graph}"

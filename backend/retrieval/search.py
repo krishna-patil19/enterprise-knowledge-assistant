@@ -264,6 +264,7 @@ class HybridSearcher:
         expanded = list(chunks)
         already_added = {c["id"] for c in chunks}
         relations_pulled = []
+        seen_rels = set()
         
         try:
             for chunk in chunks:
@@ -279,18 +280,21 @@ class HybridSearcher:
                 rows = database.execute_query(ch_query, parameters={'c': chunk_id, 'p': file_path})
                 
                 for row in rows:
+                    rel_sig = (row.get("source_path"), row.get("target_path"), row.get("rel_type"))
+                    if rel_sig not in seen_rels:
+                        seen_rels.add(rel_sig)
+                        relations_pulled.append(row)
+                        
                     if row["source_chunk_id"] and row["source_chunk_id"] not in already_added:
                         c = database.get_chunk_by_id(row["source_chunk_id"])
                         if c:
                             expanded.append(c)
                             already_added.add(c["id"])
-                            relations_pulled.append(row)
                     if row["target_chunk_id"] and row["target_chunk_id"] not in already_added:
                         c = database.get_chunk_by_id(row["target_chunk_id"])
                         if c:
                             expanded.append(c)
                             already_added.add(c["id"])
-                            relations_pulled.append(row)
         except Exception as e:
             logger.error(f"Relationship expansion failed: {e}")
             

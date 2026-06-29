@@ -169,7 +169,7 @@ class EmbeddingService:
 class LLMService:
     """
     Abstracted service for LLM completions and streaming.
-    Supports: AWS Bedrock Claude 3 Haiku or OpenAI GPT-4o-mini.
+    Supports: AWS Bedrock Claude 3 Haiku or OpenAI GPT-5.5.
     Falls back to a smart local rule-based response generator for offline POC.
     """
 
@@ -252,7 +252,7 @@ class LLMService:
             yield from cls._generate_mock_completion_stream(system_prompt, user_prompt)
 
     # -----------------------------------------------------------------------
-    # OpenAI — GPT-4o-mini (fallback provider)
+    # OpenAI — GPT-5.5 (fallback provider)
     # -----------------------------------------------------------------------
     @classmethod
     def _openai_chat_completion(cls, system_prompt: str, user_prompt: str) -> str:
@@ -260,12 +260,11 @@ class LLMService:
             from openai import OpenAI
             client = OpenAI(api_key=OPENAI_API_KEY)
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5.5",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.1
+                ]
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -278,12 +277,11 @@ class LLMService:
             from openai import OpenAI
             client = OpenAI(api_key=OPENAI_API_KEY)
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5.5",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.1,
                 stream=True
             )
             for chunk in response:
